@@ -242,6 +242,8 @@ examples:
                    help='prod.keys path (default: project dir or ~/.switch/prod.keys)')
     p.add_argument('--output', '-o', metavar='DIR',
                    help='output directory (default: same as input)')
+    p.add_argument('--nsp', action='store_true',
+                   help='output NSP instead of XCI (only useful for NSZ input)')
     p.add_argument('--verbose', '-v', action='store_true')
     args = p.parse_args()
 
@@ -277,9 +279,15 @@ examples:
                 else:
                     nsp_path = inp_path
 
-                out_path = out_dir / (inp_path.stem + '.xci')
-                print(f"Converting {nsp_path.name} → {out_path.name} …")
-                nsp_to_xci(nsp_path, out_path, verbose=args.verbose)
+                if args.nsp:
+                    out_path = out_dir / (inp_path.stem + '.nsp')
+                    print(f"Copying {nsp_path.name} → {out_path.name} …")
+                    shutil.copy2(nsp_path, out_path)
+                    print(f"  → {out_path.name}  ({os.path.getsize(out_path):,} bytes)")
+                else:
+                    out_path = out_dir / (inp_path.stem + '.xci')
+                    print(f"Converting {nsp_path.name} → {out_path.name} …")
+                    nsp_to_xci(nsp_path, out_path, verbose=args.verbose)
 
             except Exception as e:
                 print(f"[error] {inp_path.name}: {e}", file=sys.stderr)
