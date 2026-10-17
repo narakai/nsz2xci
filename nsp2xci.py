@@ -393,9 +393,16 @@ def nsp_to_xci(nsp_path, out_path, keys, verbose=False):
 
 # ─── NSZ decompression ────────────────────────────────────────────────────────
 
-def _nsz_bin():
-    """Path to the nsz binary in our venv."""
-    return Path(__file__).parent / 'venv' / 'bin' / 'nsz'
+def _nsz_cmd():
+    """
+    Command that runs nsz with the venv's interpreter.
+
+    The venv's own `nsz` launcher hard-codes the path the venv was created at in its shebang, so
+    it stops working as soon as the project folder is moved; importing the module does not care.
+    """
+    venv_python = Path(__file__).parent / 'venv' / 'bin' / 'python3'
+    python = str(venv_python if venv_python.exists() else sys.executable)
+    return [python, '-c', 'import sys; from nsz import main; sys.argv[0] = "nsz"; sys.exit(main())']
 
 
 def _setup_keys(keys_path):
@@ -412,6 +419,72 @@ def _setup_keys(keys_path):
     return True               # we created it
 
 
+def repair_pfs0_sizes(nsp_path, keys):
+    """
+    Fix the file table of an NSP written by `nsz -D`, in place, but only if it is actually wrong.
+
+    nsz sizes every decompressed NCA as 0x4000 + the sum of its NCZ sections. That is wrong for NCAs
+    whose first section starts before 0x4000 (right after the 0xC00 header): the table then claims
+    more bytes than were written, so every later entry (tickets, the cnmt NCA) points past where it
+    really is and the file can't be installed. The bytes that were written are right, and each NCA
+    states its true size in its own header, so only the table needs correcting.
+
+    A table that already ends exactly at the end of the file is left alone: padding between the
+    header and the first file, or between files, is legitimate.
+
+    Returns the number of entries that were changed.
+    """
+    header_key = keys.get('header_key')
+    if not header_key or len(header_key) != 32:
+        raise ValueError('prod.keys is missing header_key')
+    cipher = NcaHeaderCipher(header_key)
+
+    with open(nsp_path, 'r+b') as f:
+        f.seek(0)
+        head = f.read(16)
+        if head[:4] != b'PFS0':
+            raise ValueError('Not a PFS0 file')
+        count, strtab = struct.unpack('<II', head[4:12])
+        table = bytearray(f.read(count * 0x18))
+        names = f.read(strtab)
+        data_start = 16 + count * 0x18 + strtab
+        file_size = f.seek(0, 2)
+
+        entries = []
+        for i in range(count):
+            off, size, name_off = struct.unpack('<QQI', table[i * 0x18:i * 0x18 + 20])
+            entries.append({'i': i, 'off': off, 'size': size,
+                            'name': names[name_off:].split(b'\0')[0].decode()})
+
+        if data_start + max(e['off'] + e['size'] for e in entries) == file_size:
+            return 0   # the table is consistent with the file; nothing to repair
+
+        shift = 0   # bytes the file before this entry really is shorter than the table says
+        for e in sorted(entries, key=lambda e: e['off']):
+            e['new_off'] = e['off'] - shift
+            e['new_size'] = e['size']
+            if e['name'].lower().endswith('.nca'):
+                f.seek(data_start + e['new_off'])
+                try:
+                    declared = struct.unpack('<Q', cipher.decrypt(f.read(NCA_HEADER_SIZE))[0x208:0x210])[0]
+                except ValueError:
+                    continue
+                if declared < e['size']:
+                    e['new_size'] = declared
+                    shift += e['size'] - declared
+
+        end = data_start + max(e['new_off'] + e['new_size'] for e in entries)
+        if end != file_size:
+            raise ValueError(
+                f'File table does not add up after repair ({end} vs {file_size} bytes); '
+                'refusing to touch it')
+        for e in entries:
+            struct.pack_into('<QQ', table, e['i'] * 0x18, e['new_off'], e['new_size'])
+        f.seek(16)
+        f.write(table)
+        return sum(1 for e in entries if (e['new_off'], e['new_size']) != (e['off'], e['size']))
+
+
 def decompress_nsz(nsz_path, work_dir, keys_path):
     """Decompress NSZ → NSP using nsz CLI. Returns Path to the resulting NSP."""
     nsz_path  = Path(nsz_path)
@@ -421,7 +494,7 @@ def decompress_nsz(nsz_path, work_dir, keys_path):
     created = _setup_keys(keys_path)
     try:
         result = subprocess.run(
-            [str(_nsz_bin()), '-D', str(nsz_path), '-o', str(work_dir)],
+            _nsz_cmd() + ['-D', str(nsz_path), '-o', str(work_dir)],
             capture_output=True, text=True
         )
         if result.returncode != 0:
@@ -438,6 +511,9 @@ def decompress_nsz(nsz_path, work_dir, keys_path):
         if not candidates:
             raise RuntimeError("nsz produced no .nsp file")
         nsp = candidates[0]
+    fixed = repair_pfs0_sizes(nsp, load_keys(keys_path))
+    if fixed:
+        print(f"  (corrected {fixed} wrong file-table entries nsz wrote for NCAs whose first section starts before 0x4000)")
     return nsp
 
 
