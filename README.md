@@ -53,7 +53,15 @@ python3 -m venv venv
 
 把 `prod.keys` 放在项目目录下即可自动识别，无需额外指定。
 
-NSP 转 XCI 不需要 keys，只有 NSZ 解压时才需要。
+**输出 XCI 一律需要 keys**（NSP、NSZ 都一样）：eShop 版的 NCA 带 titlekey 加密，转 XCI 时会用 ticket 里的
+titlekey 写入 NCA 头的 key area 并清除 rights ID，使它和真卡带里的 NCA 一致，不再依赖 `.tik`。
+数据部分不会被改动。
+
+只有 **NSZ → NSP**（`--nsp`）时，keys 仅用于解压。普通 `.nsp` 加 `--nsp` 没有意义，会直接跳过。
+
+### 安装时提示"无效的 NCA 签名"
+正常现象。改过 NCA 头之后，任天堂的 RSA 签名自然对不上，重新签名需要任天堂私钥，谁都做不到。
+带 sigpatches 的大气层环境下不影响安装和运行。
 
 ## 格式说明
 
@@ -61,4 +69,4 @@ NSP 转 XCI 不需要 keys，只有 NSZ 解压时才需要。
 |------|------|
 | NSP | 数字版游戏（eShop 格式） |
 | NSZ | NSP 的压缩版 |
-| XCI | 卡带格式 |
+| XCI | 卡带格式（输出的 XCI 只含 NCA，不含 ticket / cert） |
