@@ -12,7 +12,7 @@ The file name is the game's Build ID, so a cheat only loads on the exact game ve
 
 | Title ID | Game | Notes |
 |---|---|---|
-| 01003E601E324000 | DRAGON QUEST III HD-2D Remake | BID 6F49452BD0B343B1 (base v1.0.0). No-encounter toggle and speed x2 were ported by pattern matching from DQ1+2 |
-| 0100D7C01F254000 | DRAGON QUEST I & II HD-2D Remake | BID DDB633241838C090 (v1.0.2). Ported from the v1.0.1 set; No Encounter is a ZL + D-Pad toggle |
+| 01003E601E324000 | DRAGON QUEST III HD-2D Remake | BID 6F49452BD0B343B1 (base v1.0.0). No-encounter toggle, speed x2 and Mini Medals were ported by pattern matching from DQ1+2 |
+| 0100D7C01F254000 | DRAGON QUEST I & II HD-2D Remake | BID DDB633241838C090 (v1.0.2). Ported from the v1.0.1 set (code after ~0xB9xxxx moved +0x1B0 in v1.0.2, addresses corrected: Safe Passage, Mini Medals). No Encounter is a ZL + D-Pad toggle |
 
 Other folders are cheats collected earlier for other games.
